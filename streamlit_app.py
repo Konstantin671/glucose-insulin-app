@@ -9,7 +9,7 @@ def custom_mse(y_true, y_pred):
     return tf.reduce_mean(tf.square(y_true - y_pred))
 
 # Загружаем обновленную модель
-model = tf.keras.models.load_model("/Users/mac/Documents/raas_project/2complex_glucose_insulin_model_final.h5", custom_objects={"custom_mse": custom_mse})
+model = tf.keras.models.load_model("2complex_glucose_insulin_model_final.h5", custom_objects={"custom_mse": custom_mse})
 
 def get_activations(model, input_data):
     activations = []
