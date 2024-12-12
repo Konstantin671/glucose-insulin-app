@@ -71,7 +71,7 @@ def visualize_neural_network(weights, activations):
 
     st.pyplot(fig)
 
-st.title("Демонстрационная модель глюкозно-инсулиновой системы")
+st.title("Демонстрационная модель глюкозо-инсулиновой системы")
 
 # Ползунки для ввода данных
 glucose = st.slider("Глюкоза (ммоль/л)", 4.0, 10.0, value=6.0, step=0.1)
