@@ -4,104 +4,137 @@ import tensorflow as tf
 import networkx as nx
 import matplotlib.pyplot as plt
 
+# Кастомная функция потерь
 @tf.keras.utils.register_keras_serializable()
 def custom_mse(y_true, y_pred):
     return tf.reduce_mean(tf.square(y_true - y_pred))
 
-# Загружаем обновленную модель
-model = tf.keras.models.load_model("2complex_glucose_insulin_model_final.h5", custom_objects={"custom_mse": custom_mse})
-
-def get_activations(model, input_data):
-    activations = []
-    layer_output = input_data
-    for layer in model.layers:
-        if len(layer.get_weights()) > 0:
-            layer_output = layer(layer_output)
-            activations.append(layer_output.numpy().flatten())
-    return activations
+# Кэшированная загрузка модели
+@st.cache_resource
+def load_model():
+    try:
+        model_path = "my_fixed_glucose_insulin_model.h5"
+        model = tf.keras.models.load_model(model_path, custom_objects={"custom_mse": custom_mse})
+        return model
+    except Exception as e:
+        st.error(f"Ошибка загрузки модели: {e}")
+        st.stop()
 
 def visualize_neural_network(weights, activations):
-    G = nx.DiGraph()
+    try:
+        G = nx.DiGraph()
 
-    input_nodes = ['Глюкоза', 'Инсулин', 'Углеводы', 'Время', 'Время суток']
-    hidden_layer_1_nodes = [f'H1_{i+1}' for i in range(weights[0].shape[1])]
-    hidden_layer_2_nodes = [f'H2_{i+1}' for i in range(weights[1].shape[1])]
-    hidden_layer_3_nodes = [f'H3_{i+1}' for i in range(weights[2].shape[1])]
-    output_nodes = ['Будущая глюкоза', 'Будущий инсулин']
+        input_nodes = ['Глюкоза', 'Инсулин', 'Углеводы', 'Время', 'Время суток']
+        hidden_layer_1_nodes = [f'H1_{i+1}' for i in range(weights[0].shape[1])]
+        hidden_layer_2_nodes = [f'H2_{i+1}' for i in range(weights[1].shape[1])]
+        hidden_layer_3_nodes = [f'H3_{i+1}' for i in range(weights[2].shape[1])]
+        output_nodes = ['Будущая глюкоза', 'Будущий инсулин']
 
-    G.add_nodes_from(input_nodes)
-    G.add_nodes_from(hidden_layer_1_nodes)
-    G.add_nodes_from(hidden_layer_2_nodes)
-    G.add_nodes_from(hidden_layer_3_nodes)
-    G.add_nodes_from(output_nodes)
+        G.add_nodes_from(input_nodes)
+        G.add_nodes_from(hidden_layer_1_nodes)
+        G.add_nodes_from(hidden_layer_2_nodes)
+        G.add_nodes_from(hidden_layer_3_nodes)
+        G.add_nodes_from(output_nodes)
 
-    def add_edges(layer_weights, from_nodes, to_nodes, layer_activations):
-        for i, from_node in enumerate(from_nodes):
-            for j, to_node in enumerate(to_nodes):
-                weight = layer_weights[i, j]
-                activation = layer_activations[j]
-                intensity = (activation - np.min(layer_activations)) / (np.max(layer_activations) - np.min(layer_activations) + 1e-8)
-                color = plt.cm.RdYlBu(intensity)
-                G.add_edge(from_node, to_node, weight=weight, color=color)
+        def add_edges(layer_weights, from_nodes, to_nodes, layer_activations):
+            for i, from_node in enumerate(from_nodes):
+                for j, to_node in enumerate(to_nodes):
+                    weight = layer_weights[i, j]
+                    activation = layer_activations[j]
+                    intensity = (activation - np.min(layer_activations)) / (
+                        np.max(layer_activations) - np.min(layer_activations) + 1e-8
+                    )
+                    color = plt.cm.RdYlBu(intensity)
+                    G.add_edge(from_node, to_node, weight=weight, color=color)
 
-    add_edges(weights[0], input_nodes, hidden_layer_1_nodes, activations[0])
-    add_edges(weights[1], hidden_layer_1_nodes, hidden_layer_2_nodes, activations[1])
-    add_edges(weights[2], hidden_layer_2_nodes, hidden_layer_3_nodes, activations[2])
-    add_edges(weights[3], hidden_layer_3_nodes, output_nodes, activations[3])
+        add_edges(weights[0], input_nodes, hidden_layer_1_nodes, activations[0])
+        add_edges(weights[1], hidden_layer_1_nodes, hidden_layer_2_nodes, activations[1])
+        add_edges(weights[2], hidden_layer_2_nodes, hidden_layer_3_nodes, activations[2])
+        add_edges(weights[3], hidden_layer_3_nodes, output_nodes, activations[3])
 
-    pos = {}
-    vertical_gap = 5
-    horizontal_gap = 6
-    for idx, node in enumerate(input_nodes):
-        pos[node] = (0, idx * vertical_gap)
-    for idx, node in enumerate(hidden_layer_1_nodes):
-        pos[node] = (horizontal_gap, idx * vertical_gap)
-    for idx, node in enumerate(hidden_layer_2_nodes):
-        pos[node] = (2 * horizontal_gap, idx * vertical_gap)
-    for idx, node in enumerate(hidden_layer_3_nodes):
-        pos[node] = (3 * horizontal_gap, idx * vertical_gap)
-    for idx, node in enumerate(output_nodes):
-        pos[node] = (4 * horizontal_gap, idx * vertical_gap)
+        pos = {}
+        for idx, node in enumerate(input_nodes):
+            pos[node] = (0, idx * 5)
+        for idx, node in enumerate(hidden_layer_1_nodes):
+            pos[node] = (6, idx * 5)
+        for idx, node in enumerate(hidden_layer_2_nodes):
+            pos[node] = (12, idx * 5)
+        for idx, node in enumerate(hidden_layer_3_nodes):
+            pos[node] = (18, idx * 5)
+        for idx, node in enumerate(output_nodes):
+            pos[node] = (24, idx * 5)
 
-    fig, ax = plt.subplots(figsize=(20, 14))
-    nx.draw_networkx_nodes(G, pos, node_size=3000, node_color='lightblue')
-    nx.draw_networkx_labels(G, pos, font_size=12, font_weight='bold')
-    edge_colors = [d['color'] for _, _, d in G.edges(data=True)]
-    nx.draw_networkx_edges(G, pos, edge_color=edge_colors, width=2, arrowstyle='-|>')
+        fig, ax = plt.subplots(figsize=(20, 14))
+        nx.draw_networkx_nodes(G, pos, node_size=3000, node_color='lightblue')
+        nx.draw_networkx_labels(G, pos, font_size=12, font_weight='bold')
+        edge_colors = [d['color'] for _, _, d in G.edges(data=True)]
+        nx.draw_networkx_edges(G, pos, edge_color=edge_colors, width=2, arrowstyle='-|>')
 
-    st.pyplot(fig)
+        st.pyplot(fig)
+    except Exception as e:
+        st.error(f"Ошибка визуализации сети: {e}")
 
-st.title("Демонстрационная модель глюкозо-инсулиновой системы")
-st.write("""
+def main():
+    st.title("Демонстрационная модель глюкозо-инсулиновой системы")
+
+    model = load_model()
+
+    st.write("""
 В этом приложении вы можете ввести предполагаемые значения глюкозы, инсулина, 
 количества потреблённых углеводов, времени до прогноза и времени суток. 
 Модель покажет, как эти параметры могут повлиять на будущие уровни глюкозы и инсулина.
 """)
 
-# Ползунки для ввода данных
-glucose = st.slider("Глюкоза (ммоль/л)", 4.0, 10.0, value=6.0, step=0.1)
-insulin = st.slider("Инсулин (ед.)", 5.0, 20.0, value=10.0, step=0.5)
-carbs = st.slider("Углеводы (граммы)", 0.0, 100.0, value=50.0, step=5.0)
-time = st.slider("Время прогноза (минуты)", 0, 180, value=90, step=5)
-time_of_day = st.selectbox("Время суток", ["Ночь (0)", "Утро (6)", "День (12)", "Вечер (18)"])
-time_of_day_value = {"Ночь (0)": 0, "Утро (6)": 6, "День (12)": 12, "Вечер (18)": 18}[time_of_day]
+    # Устанавливаем минимальные значения: глюкоза ≥ 2, инсулин ≥ 1, углеводы ≥ 5
+    # Вы можете подправить верхние границы и default value под себя.
+    glucose = st.slider("Глюкоза (ммоль/л)", 2.0, 12.0, value=5.0, step=0.1)
+    insulin = st.slider("Инсулин (ед.)",     1.0, 30.0, value=8.0, step=0.5)
+    carbs   = st.slider("Углеводы (граммы)", 5.0, 150.0, value=40.0, step=5.0)
+    time    = st.slider("Время до прогноза (минуты)", 0, 180, value=30, step=5)
 
-# Проверка входных значений
-if glucose == 0 or insulin == 0 or carbs == 0:
-    st.warning("Значения глюкозы, инсулина и углеводов должны быть больше 0.")
-else:
-    input_data = np.array([[glucose, insulin, carbs, time, time_of_day_value]], dtype=np.float32)
-    output = model.predict(input_data, verbose=0)[0]
-    st.write("### Результаты предсказания:")
-    st.write(f"Будущий уровень глюкозы: {output[0]:.2f} ммоль/л")
-    st.write(f"Будущий уровень инсулина: {output[1]:.2f} ед.")
+    time_of_day_label = st.selectbox("Время суток", ["Ночь (0)", "Утро (6)", "День (12)", "Вечер (18)"])
+    time_of_day_map = {"Ночь (0)": 0, "Утро (6)": 6, "День (12)": 12, "Вечер (18)": 18}
+    time_of_day = time_of_day_map[time_of_day_label]
 
-# Активации и визуализация
-activations = get_activations(model, tf.constant(input_data))
-weights = [layer.get_weights()[0] for layer in model.layers if len(layer.get_weights()) > 0]
+    # Предупреждения при выборе минимальных значений
+    if glucose == 2.0:
+        st.warning("Вы выбрали минимально возможное значение глюкозы (2 ммоль/л). Это крайне низкая глюкоза!")
+    if insulin == 1.0:
+        st.warning("Вы выбрали минимальное значение инсулина (1 ед.). Это может означать почти полное отсутствие инсулина!")
+    if carbs == 5.0:
+        st.warning("Вы выбрали минимальное значение углеводов (5 г). Это очень мало углеводов для приёма!")
 
-st.write("### Визуализация структуры сети и активаций:")
-visualize_neural_network(weights, activations)
+    # Формируем вход
+    input_data = np.array([[glucose, insulin, carbs, time, time_of_day]], dtype=np.float32)
+
+    # Предсказание
+    try:
+        output = model.predict(input_data)
+        future_glucose  = output[0, 0]
+        future_insulin  = output[0, 1]
+
+        st.subheader("Результат предсказания:")
+        st.write(f"**Будущая глюкоза**: {future_glucose:.2f} ммоль/л")
+        st.write(f"**Будущий инсулин**: {future_insulin:.2f} ед.")
+
+        # Визуализация сети
+        weights = [layer.get_weights()[0] for layer in model.layers if len(layer.get_weights()) > 0]
+        activations = []
+        current_data = input_data
+        for layer in model.layers:
+            if len(layer.get_weights()) > 0:
+                current_data = layer(current_data)
+                activations.append(current_data.numpy().flatten())
+
+        st.write("Визуализация нейронной сети:")
+        visualize_neural_network(weights, activations)
+
+    except Exception as e:
+        st.error(f"Ошибка предсказания: {e}")
+
+if __name__ == "__main__":
+    main()
+
 
 
 # Кнопка для отображения описания
@@ -161,7 +194,7 @@ with st.expander("Подробнее об архитектуре модели и
     4. **Эпохи**  
        - 150 эпох, после которых достигается приемлемая сходимость ошибки на валидационной выборке.
     5. **Сохранение модели**  
-       - Модель экспортируется в файл `2complex_glucose_insulin_model_final.h5` и далее используется в нашем Streamlit-приложении.
+       - Модель экспортируется в файл `my_fixed_glucose_insulin_model.h5` и далее используется в нашем Streamlit-приложении.
 
     ### Визуализация работы сети
     - Граф с узлами (нейронами) и рёбрами (весами):
@@ -240,116 +273,154 @@ with st.expander("Подробнее об архитектуре модели и
 # Отдельная кнопка для отображения кода обучения модели
 with st.expander("Показать код обучения модели"):
     st.code(r"""
-    import numpy as np
-    import tensorflow as tf
-    from tensorflow.keras.models import Sequential
-    from tensorflow.keras.layers import Dense, Dropout
-    from tensorflow.keras.regularizers import l2
-    from tensorflow.keras.optimizers import Adam
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.regularizers import l2
+from tensorflow.keras.optimizers import Adam
 
-    @tf.keras.utils.register_keras_serializable()
-    def custom_mse(y_true, y_pred):
-        return tf.reduce_mean(tf.square(y_true - y_pred))
+# -----------------------------------------------------------------------------
+# Кастомная функция ошибки (MSE)
+# -----------------------------------------------------------------------------
+@tf.keras.utils.register_keras_serializable()
+def custom_mse(y_true, y_pred):
+    return tf.reduce_mean(tf.square(y_true - y_pred))
 
-    def generate_glucose_insulin_data(samples=10000):
-        np.random.seed(42)
+# -----------------------------------------------------------------------------
+# "больше глюкозы => в среднем больше инсулина"
+# -----------------------------------------------------------------------------
+def generate_glucose_insulin_data(samples=10000, random_seed=42):
+    
+    np.random.seed(random_seed)
 
-        # Генерация входных данных
-        glucose = np.random.uniform(4, 10, samples)  # Уровень глюкозы в ммоль/л
-        insulin = np.random.uniform(5, 20, samples)  # Уровень инсулина в ед.
-        carbs = np.random.uniform(0, 100, samples)  # Количество потребленных углеводов в граммах
-        time = np.random.uniform(0, 180, samples)  # Время до прогноза в минутах
-        time_of_day = np.random.choice([0, 6, 12, 18], samples)  # Время суток
+    # ---------------------------
+    # 1) Генерация исходных данных
+    # ---------------------------
+    glucose = np.random.uniform(4, 9, samples)       # Текущая глюкоза, ммоль/л (4..9)
+    insulin = np.random.uniform(5, 15, samples)      # Текущий инсулин, ед. (5..15)
+    carbs   = np.random.uniform(0, 100, samples)     # Углеводы, граммы (0..100)
+    time    = np.random.uniform(0, 120, samples)     # Горизонт прогноза, мин (0..120)
+    time_of_day = np.random.choice([0, 6, 12, 18], samples)
 
-        # Учёт чувствительности к инсулину в зависимости от времени суток
-        insulin_sensitivity_map = {
-            0: 0.8,  # Ночь
-            6: 1.2,  # Утро
-            12: 1.0, # День
-            18: 0.9  # Вечер
-        }
-        insulin_sensitivity = np.array([insulin_sensitivity_map[tod] for tod in time_of_day])
+    # Циркадная чувствительность
+    insulin_sensitivity_map = {
+        0: 0.7,   # Ночь
+        6: 1.2,   # Утро
+        12: 1.0,  # День
+        18: 0.9   # Вечер
+    }
+    insulin_sensitivity = np.array([insulin_sensitivity_map[t] for t in time_of_day])
 
-        # Будущая глюкоза: логика постепенного влияния углеводов, инсулина и времени
-        carb_effect = np.where(time <= 60, 0.3 * carbs, 0.1 * carbs)
-        future_glucose = (
-            glucose
-            + carb_effect
-            - 0.5 * np.sqrt(insulin) * insulin_sensitivity
-            - 0.01 * time * glucose * insulin_sensitivity
-        )
-        future_glucose = np.clip(future_glucose, 0, 15)
+    mask_A = (time <= 30)
+    mask_B = (time > 30) & (time <= 60)
+    mask_C = (time > 60)
 
-        # Будущий инсулин: базальный уровень и реакция на повышение глюкозы
-        basal_insulin = 5  # Базальный уровень инсулина
-        insulin_response = 0.05 * np.maximum(glucose - 5, 0) * insulin_sensitivity
-        future_insulin = (
-            insulin
-            + insulin_response
-            - 0.005 * time * insulin
-        )
-        future_insulin = np.clip(future_insulin, 0, 50)
+    carb_effect = np.zeros(samples)
+    carb_effect[mask_A] = 0.3 * carbs[mask_A]
+    carb_effect[mask_B] = 0.2 * carbs[mask_B]
+    carb_effect[mask_C] = 0.1 * carbs[mask_C]
 
-        # Если все входные значения равны 0, то выходные тоже равны 0
-        mask = (glucose == 0) & (insulin == 0) & (carbs == 0) & (time == 0) & (time_of_day == 0)
-        future_glucose[mask] = 0
-        future_insulin[mask] = 0
+    endo_production = np.zeros(samples)
+    low_mask  = (glucose < 4)
+    high_mask = (glucose > 8)
+    mid_mask  = ~(low_mask | high_mask)
 
-        X = np.column_stack((glucose, insulin, carbs, time, time_of_day))
-        y = np.column_stack((future_glucose, future_insulin))
-        return X, y
+    endo_production[low_mask]  = np.random.uniform(0.8, 1.5, size=np.sum(low_mask))
+    endo_production[high_mask] = np.random.uniform(0, 0.2,  size=np.sum(high_mask))
+    endo_production[mid_mask]  = np.random.uniform(0, 0.5,  size=np.sum(mid_mask))
 
-    # Генерация данных
-    X, y = generate_glucose_insulin_data()
 
-    # Определение архитектуры модели
+    base_future_glucose = (
+        glucose
+        + carb_effect
+        - 0.7 * np.sqrt(insulin) * insulin_sensitivity
+        - 0.005 * time * glucose * insulin_sensitivity
+        + endo_production
+    )
+
+    # Умеренный шум (±0.15)
+    noise_g = np.random.normal(0, 0.15, samples)
+    future_glucose = base_future_glucose + noise_g
+    future_glucose = np.clip(future_glucose, 0, 18) 
+
+    base_secretion = np.zeros(samples)
+    high_gluc_mask = (glucose > 6)
+
+    base_secretion[high_gluc_mask] = 0.07 * (glucose[high_gluc_mask] - 6) * insulin_sensitivity[high_gluc_mask]
+
+    fast_time = np.minimum(time, 30)
+    slow_time = np.maximum(time - 30, 0)
+
+    degr_fast = 0.005 * fast_time * insulin
+    degr_slow = 0.002 * slow_time * insulin
+    total_deg = degr_fast + degr_slow
+
+    base_future_insulin = insulin + base_secretion - total_deg
+
+    noise_ins = np.random.normal(0, 0.2, samples)
+    future_insulin = base_future_insulin + noise_ins
+    future_insulin = np.clip(future_insulin, 0, 40) 
+
+
+    X = np.column_stack((glucose, insulin, carbs, time, time_of_day))
+    y = np.column_stack((future_glucose, future_insulin))
+
+    return X.astype(np.float32), y.astype(np.float32)
+
+if __name__ == "__main__":
+    # 1) Генерируем данные
+    X, y = generate_glucose_insulin_data(samples=10000, random_seed=42)
+    print("Shape of X:", X.shape)
+    print("Shape of y:", y.shape)
+
+    # 2) Определяем модель
     model = Sequential([
-        Dense(16, activation='relu', input_dim=5, kernel_regularizer=l2(0.001)),
-        Dropout(0.3),
-        Dense(8, activation='relu', kernel_regularizer=l2(0.001)),
-        Dropout(0.3),
-        Dense(4, activation='relu', kernel_regularizer=l2(0.001)),
-        Dropout(0.3),
-        Dense(2)  # Выход: будущая глюкоза и будущий инсулин
+        Dense(16, activation='relu', input_dim=5, kernel_regularizer=l2(0.001), name="dense_1"),
+        Dropout(0.3, name="dropout_1"),
+        Dense(8, activation='relu', kernel_regularizer=l2(0.001), name="dense_2"),
+        Dropout(0.3, name="dropout_2"),
+        Dense(4, activation='relu', kernel_regularizer=l2(0.001), name="dense_3"),
+        Dropout(0.3, name="dropout_3"),
+        Dense(2, name="output_layer")
     ])
 
-    # Компиляция модели
     model.compile(optimizer=Adam(learning_rate=0.001), loss=custom_mse)
 
-    # Обучение модели
+    # 3) Обучаем (150 эпох)
     model.fit(X, y, epochs=150, batch_size=64, validation_split=0.2, verbose=1)
 
-    # Сохранение модели
-    model.save("2complex_glucose_insulin_model_final.h5")
-    print("Модель сохранена как 2complex_glucose_insulin_model_final.h5")
-    """)
-       
+    # 4) Сохраняем
+    MODEL_FILENAME = "my_fixed_glucose_insulin_model.h5"
+    model.save(MODEL_FILENAME)
+    print(f"\nМодель успешно сохранена в файл {MODEL_FILENAME}")""")
+
 # Кнопка для отображения кода приложения Streamlit
-with st.expander("Показать код приложения Streamlit"):
-    st.code(r"""
-    import streamlit as st
-    import numpy as np
-    import tensorflow as tf
-    import networkx as nx
-    import matplotlib.pyplot as plt
+with st.expander("Показать код приложения"):
+    st.code(r"""import streamlit as st
+import numpy as np
+import tensorflow as tf
+import networkx as nx
+import matplotlib.pyplot as plt
 
-    @tf.keras.utils.register_keras_serializable()
-    def custom_mse(y_true, y_pred):
-        return tf.reduce_mean(tf.square(y_true - y_pred))
+# Кастомная функция потерь
+@tf.keras.utils.register_keras_serializable()
+def custom_mse(y_true, y_pred):
+    return tf.reduce_mean(tf.square(y_true - y_pred))
 
-    # Загружаем обновленную модель
-    model = tf.keras.models.load_model("/Users/mac/Documents/raas_project/2complex_glucose_insulin_model_final.h5", custom_objects={"custom_mse": custom_mse})
+# Кэшированная загрузка модели
+@st.cache_resource
+def load_model():
+    try:
+        model_path = "my_fixed_glucose_insulin_model.h5"
+        model = tf.keras.models.load_model(model_path, custom_objects={"custom_mse": custom_mse})
+        return model
+    except Exception as e:
+        st.error(f"Ошибка загрузки модели: {e}")
+        st.stop()
 
-    def get_activations(model, input_data):
-        activations = []
-        layer_output = input_data
-        for layer in model.layers:
-            if len(layer.get_weights()) > 0:
-                layer_output = layer(layer_output)
-                activations.append(layer_output.numpy().flatten())
-        return activations
-
-    def visualize_neural_network(weights, activations):
+def visualize_neural_network(weights, activations):
+    try:
         G = nx.DiGraph()
 
         input_nodes = ['Глюкоза', 'Инсулин', 'Углеводы', 'Время', 'Время суток']
@@ -369,28 +440,30 @@ with st.expander("Показать код приложения Streamlit"):
                 for j, to_node in enumerate(to_nodes):
                     weight = layer_weights[i, j]
                     activation = layer_activations[j]
-                    intensity = (activation - np.min(layer_activations)) / (np.max(layer_activations) - np.min(layer_activations) + 1e-8)
+                    intensity = (activation - np.min(layer_activations)) / (
+                        np.max(layer_activations) - np.min(layer_activations) + 1e-8
+                    )
                     color = plt.cm.RdYlBu(intensity)
                     G.add_edge(from_node, to_node, weight=weight, color=color)
 
+        # Добавляем связи между слоями
         add_edges(weights[0], input_nodes, hidden_layer_1_nodes, activations[0])
         add_edges(weights[1], hidden_layer_1_nodes, hidden_layer_2_nodes, activations[1])
         add_edges(weights[2], hidden_layer_2_nodes, hidden_layer_3_nodes, activations[2])
         add_edges(weights[3], hidden_layer_3_nodes, output_nodes, activations[3])
 
+        # Расположение узлов "лесенкой"
         pos = {}
-        vertical_gap = 5
-        horizontal_gap = 6
         for idx, node in enumerate(input_nodes):
-            pos[node] = (0, idx * vertical_gap)
+            pos[node] = (0, idx * 5)
         for idx, node in enumerate(hidden_layer_1_nodes):
-            pos[node] = (horizontal_gap, idx * vertical_gap)
+            pos[node] = (6, idx * 5)
         for idx, node in enumerate(hidden_layer_2_nodes):
-            pos[node] = (2 * horizontal_gap, idx * vertical_gap)
+            pos[node] = (12, idx * 5)
         for idx, node in enumerate(hidden_layer_3_nodes):
-            pos[node] = (3 * horizontal_gap, idx * vertical_gap)
+            pos[node] = (18, idx * 5)
         for idx, node in enumerate(output_nodes):
-            pos[node] = (4 * horizontal_gap, idx * vertical_gap)
+            pos[node] = (24, idx * 5)
 
         fig, ax = plt.subplots(figsize=(20, 14))
         nx.draw_networkx_nodes(G, pos, node_size=3000, node_color='lightblue')
@@ -399,35 +472,64 @@ with st.expander("Показать код приложения Streamlit"):
         nx.draw_networkx_edges(G, pos, edge_color=edge_colors, width=2, arrowstyle='-|>')
 
         st.pyplot(fig)
+    except Exception as e:
+        st.error(f"Ошибка визуализации сети: {e}")
 
+def main():
     st.title("Демонстрационная модель глюкозо-инсулиновой системы")
 
-    # Ползунки для ввода данных
-    glucose = st.slider("Глюкоза (ммоль/л)", 4.0, 10.0, value=6.0, step=0.1)
-    insulin = st.slider("Инсулин (ед.)", 5.0, 20.0, value=10.0, step=0.5)
-    carbs = st.slider("Углеводы (граммы)", 0.0, 100.0, value=50.0, step=5.0)
-    time = st.slider("Время прогноза (минуты)", 0, 180, value=90, step=5)
-    time_of_day = st.selectbox("Время суток", ["Ночь (0)", "Утро (6)", "День (12)", "Вечер (18)"])
-    time_of_day_value = {"Ночь (0)": 0, "Утро (6)": 6, "День (12)": 12, "Вечер (18)": 18}[time_of_day]
+    model = load_model()
 
-    # Проверка входных значений
-    if glucose == 0 or insulin == 0 or carbs == 0:
-        st.warning("Значения глюкозы, инсулина и углеводов должны быть больше 0.")
-    else:
-        input_data = np.array([[glucose, insulin, carbs, time, time_of_day_value]], dtype=np.float32)
-        output = model.predict(input_data, verbose=0)[0]
-        st.write("### Результаты предсказания:")
-        st.write(f"Будущий уровень глюкозы: {output[0]:.2f} ммоль/л")
-        st.write(f"Будущий уровень инсулина: {output[1]:.2f} ед.")
+    st.write(\"\"\"
+В этом приложении вы можете ввести предполагаемые значения глюкозы, инсулина, 
+количества потреблённых углеводов, времени до прогноза и времени суток. 
+Модель покажет, как эти параметры могут повлиять на будущие уровни глюкозы и инсулина.
+\"\"\")
 
-    # Активации и визуализация
-    activations = get_activations(model, tf.constant(input_data))
-    weights = [layer.get_weights()[0] for layer in model.layers if len(layer.get_weights()) > 0]
+    # Устанавливаем минимальные значения: глюкоза ≥ 2, инсулин ≥ 1, углеводы ≥ 5
+    glucose = st.slider("Глюкоза (ммоль/л)", 2.0, 12.0, value=5.0, step=0.1)
+    insulin = st.slider("Инсулин (ед.)", 1.0, 30.0, value=8.0, step=0.5)
+    carbs = st.slider("Углеводы (граммы)", 5.0, 150.0, value=40.0, step=5.0)
+    time = st.slider("Время до прогноза (минуты)", 0, 180, value=30, step=5)
 
-    st.write("### Визуализация структуры сети и активаций:")
-    visualize_neural_network(weights, activations)
-    """)
+    time_of_day_label = st.selectbox("Время суток", ["Ночь (0)", "Утро (6)", "День (12)", "Вечер (18)"])
+    time_of_day_map = {"Ночь (0)": 0, "Утро (6)": 6, "День (12)": 12, "Вечер (18)": 18}
+    time_of_day = time_of_day_map[time_of_day_label]
 
+    # Предупреждения при выборе минимальных значений
+    if glucose == 2.0:
+        st.warning("Вы выбрали минимально возможное значение глюкозы (2 ммоль/л). Это крайне низкая глюкоза!")
+    if insulin == 1.0:
+        st.warning("Вы выбрали минимальное значение инсулина (1 ед.). Это может означать почти полное отсутствие инсулина!")
+    if carbs == 5.0:
+        st.warning("Вы выбрали минимальное значение углеводов (5 г). Это очень мало углеводов для приёма!")
 
+    # Формируем входные данные для предсказания
+    input_data = np.array([[glucose, insulin, carbs, time, time_of_day]], dtype=np.float32)
 
+    # Предсказание
+    try:
+        output = model.predict(input_data)
+        future_glucose = output[0, 0]
+        future_insulin = output[0, 1]
 
+        st.subheader("Результат предсказания:")
+        st.write(f"**Будущая глюкоза**: {future_glucose:.2f} ммоль/л")
+        st.write(f"**Будущий инсулин**: {future_insulin:.2f} ед.")
+
+        st.write("Визуализация нейронной сети:")
+        weights = [layer.get_weights()[0] for layer in model.layers if len(layer.get_weights()) > 0]
+        activations = []
+        current_data = input_data
+        for layer in model.layers:
+            if len(layer.get_weights()) > 0:
+                current_data = layer(current_data)
+                activations.append(current_data.numpy().flatten())
+
+        visualize_neural_network(weights, activations)
+
+    except Exception as e:
+        st.error(f"Ошибка предсказания: {e}")
+
+if __name__ == "__main__":
+    main()""")
